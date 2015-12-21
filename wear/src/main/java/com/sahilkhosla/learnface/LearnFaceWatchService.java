@@ -4,8 +4,11 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.os.Handler;
+import android.os.Message;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
+import android.text.format.Time;
 import android.view.SurfaceHolder;
 import android.view.WindowInsets;
 
@@ -23,6 +26,8 @@ public class LearnFaceWatchService extends CanvasWatchFaceService {
         Float mTextYOffset;
         boolean mIsRound;
         private int mBackgroundColor = Color.WHITE;
+
+        protected Time mTime;
 
         @Override
         public void onCreate(SurfaceHolder holder) {
@@ -49,6 +54,8 @@ public class LearnFaceWatchService extends CanvasWatchFaceService {
                     .setBackgroundVisibility(WatchFaceStyle.BACKGROUND_VISIBILITY_INTERRUPTIVE)
                     .setShowSystemUiTime(false)
                     .build());
+
+            mTime = new Time();
         }
 
         @Override
@@ -58,10 +65,34 @@ public class LearnFaceWatchService extends CanvasWatchFaceService {
             // Draw the background.
             canvas.drawRect(bounds, mBackgroundPaint);
 
-            canvas.drawText("12:00",
-                    bounds.centerX() - mTextXOffset,
-                    bounds.centerY() - mTextYOffset,
-                    mTextPaint);
+            mTime.setToNow();
+
+            boolean mShouldDrawColon = (System.currentTimeMillis() % 1000) < 500;
+
+            String hourString = String.format("%02d", mTime.hour);
+            String minString = String.format("%02d", mTime.minute);
+            String colon = ":";
+
+            float hourWidth = mTextPaint.measureText(hourString);
+            float minWidth = mTextPaint.measureText(minString);
+            float colonWidth = mTextPaint.measureText(colon);
+
+            float timeXOffset = (hourWidth + colonWidth + minWidth) / 2;
+
+            float x = bounds.centerX() - timeXOffset;
+            float y = bounds.centerY() - mTextYOffset;
+
+            canvas.drawText(hourString, x, y, mTextPaint);
+            x += hourWidth;
+
+            // draw colon when in ambient mode or the mShouldDrawColon is true.
+            if (isInAmbientMode() || mShouldDrawColon) {
+                canvas.drawText(":", x, y, mTextPaint);
+            }
+
+            x += colonWidth;
+            canvas.drawText(minString, x, y, mTextPaint);
+
         }
 
         @Override
@@ -80,6 +111,10 @@ public class LearnFaceWatchService extends CanvasWatchFaceService {
         public void onAmbientModeChanged(boolean inAmbientMode) {
             System.out.println("OnAmbientModeChanged....");
             super.onAmbientModeChanged(inAmbientMode);
+
+            // remove the messages which are already in the queue.
+            mUpdateTimeHandler.removeMessages(0);
+
             // when Ambient Mode changes, we changes the color of the background paint.
             if (inAmbientMode){
                 mBackgroundPaint.setColor(Color.BLACK);
@@ -97,6 +132,43 @@ public class LearnFaceWatchService extends CanvasWatchFaceService {
             //Call invalidate() to cause the onDraw is invoked.
             invalidate();
         }
+
+        final Handler mUpdateTimeHandler = new Handler() {
+            @Override
+            public void handleMessage(Message message) {
+                // when the handler is active, call invalidate() to make the screen redraw.
+                invalidate();
+
+                // only visible and interaction mode, we active the handler
+                // AmbientMode use another time.
+                if (isVisible() && !isInAmbientMode()) {
+
+                    // run again in next 500 milliseconds
+                    // the first parameter is message code, we don't use it here, so put 0.
+                    mUpdateTimeHandler.sendEmptyMessageDelayed(0, 500);
+                }
+            }
+        };
+
+        @Override
+        public void onVisibilityChanged(boolean visible) {
+            super.onVisibilityChanged(visible);
+            // remove the messages which are already in the queue.
+            mUpdateTimeHandler.removeMessages(0);
+
+            if (isVisible() && !isInAmbientMode()) {
+                // send the instant message into the queue.
+                mUpdateTimeHandler.sendEmptyMessage(0);
+            }
+        }
+
+        public void onTimeTick() {
+            super.onTimeTick();
+
+            // the event is only invoked once a minute when the wear is in ambient mode
+            invalidate();
+        }
+
 
 
     }
